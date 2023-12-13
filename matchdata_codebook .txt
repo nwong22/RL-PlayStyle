@@ -1,0 +1,63 @@
+Name / Data Type / Measurement Unit /  Description
+-----------------------------
+color / nominal / -- / team color
+team / nominal / -- / team name
+duration / continuous / secs / game length
+score / continuous / points / total score of a team
+goals / continuous / -- / total goals scored by a team
+assists / continuous / -- / total assists by a team
+saves / continuous / -- / total shots saved by a team
+shots_concede / continuous / -- / shots by opposing team
+goals_concede / continuous / -- / goals scored by opposing team
+goal_diff / continuous / -- / goals conceded subtracted from goals scored
+shot_perc / continuous / percent / percentage of shots that were goals
+bpm / continuous / boost units / boost used per minute
+avg_boost_amt / continuous / boost units / average boost total of a team
+coll_per_min / continuous / boost units / boost collected per minute
+amt_collect_bp / continuous / big pads / amount of boost collected from big pads
+amt_collect_sp / continuous / small pads / amount of boost collected from small pads
+n_collect_bp / continuous / boost pads / number of big pads collected
+n_collect_sp / continuous / seconds /  continuous / boost pads / number of small pads collected
+amt_stole / continuous / boost units / amount of boost collected from the opponents half
+amt_stole_bp / continuous / boost units / amount of boost collected through big pads from the opponents half
+amt_stole_sp / continuous / boost units / amount of boost collected through small pads from the opponents half
+n_stole_bp / continuous / boost pads / number of big pads collected on the opponents half
+n_sole_sp / continuous / boost pads / number of small pads collected on the opponents half
+no_boost_time / continuous / secs / total time a player has no boost on the team
+full_boost_time / continuous / secs / total time a player has full boost on the team
+distance / continuous / uu / total distance traveled by a team
+dist_per_min / continuous / u per minute / distance traveled by a team per minute
+time_slow / continuous / secs / time spent in slow speed
+perc_slow / continuous / proportion / percent of time spent in slow speed
+time_boost / continuous / secs / time spent in boost speed
+perc_boost / continuous / proportion / percent of time spent in boost speed
+time_super / continuous / secs / time spent in supersonic speed
+perc_super / continuous / proportion / percent of time spent in supersonic speed
+time_ground / continuous / secs / time spent on the ground
+perc_ground / continuous / proportion / percent of time spent on the ground
+time_lowair / continuous / secs / time spent in low level of the air
+perc_lowair / continuous / proportion / percent of time spent in the low level of air
+time_highair / continuous / secs / time spent in high level of the air
+perc_highair / continuous / proportion / percent of time spent in the high level of air
+time_infront / continuous / secs / time spent in front of the ball
+perc_infront / continuous / proportion / percent of the time spent in front of the ball
+time_behind / continuous / secs / time spent behind the ball
+perc_behind / continuous / proportion / percent of the time spent behind the ball 
+time_def_half / continuous / secs / time spent in the defensive half
+perc_def_half / continuous / proportion / percent of time spent in the defensive half of the field
+time_off_half / continuous / secs / time spent in the offensive half
+perc_def_half / continuous / proportion / percent of time spent in the offensive half of the field
+time_off_third / continuous / secs / time spent in the offensive third of the field
+perc_off_third / continuous / proportion / percent of the time in the offensive third of the field
+time_neut_third / continuous / secs / time spent in the neutral third of the field
+perc_neut_third / continuous / proportion / percent of the time spent in the neutral third of the field
+time_def_third / continuous / secs / time spent in the defensive third of the field
+perc_def_third / continuous / proportion / percent of the time spent in the defensive third of the field
+demos / continuous / demolitions / number of times a team destroys an opposing car
+demoes / continuous / demolitions / number of times a member of a team gets their car destroyed
+
+
+
+
+
+

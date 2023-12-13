@@ -1,0 +1,579 @@
+---
+title: "PSTAT 131 Final Project"
+author: "Nicholas Wong"
+date: "2023-11-03"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# Introduction
+
+![](C:/Users/dsznw/OneDrive/Desktop/131ProjectCSVs/images/rlfrontpage.jpg)
+
+## What is Rocket League
+
+Rocket League is the sequel to the Supersonic Acrobatic Rocket Powered Battle Cars. While the initial game did not have great success, its sequel blew up. This is a soccer game but instead controlling humans, users control a rocket-powered car. The objective is to score more goals than your opponent in the 5 minute match. If the score is tied at the end of the 5 minutes the game goes into a golden goal format where the next goal scored wins.
+
+## The Goal of This Project
+
+My objective with this project is to find the best play style in Rocket League. There are many different ways to play Rocket League but it is unclear which way is the best. Is it more important to try an outscore your opponent with a powerful offense, or shut down your opponent with lock down defense? Specifically with this data, I want to learn what aspects of the game are the most important contribute most to winning.
+
+In Rocket League, the two main play styles are either speed dependent or positioning dependent. My goal is to learn which play style has the most effect on the outcome of a game.
+
+## My Inspiration
+
+One of the great things about Rocket League is that there is no single correct way to play. Similar to sports, there are different play styles and philosophies that players will swear by. In reality, the most important factor to a teams success is teamwork. But in the competitive Rocket League scene, players and coaches have different ideologies of how to play. The big debate between different regions is speed vs positioning. Which is more important? Despite what the data will say this debate will most likely continue to go on as play styles come down to preference.
+
+In my opinion, teamwork is the most important factor in winning but it is nearly impossible to calculate teamwork with the data I have available. But, this project should at least help players understand what is important to winning.
+
+## The Data
+
+![](C:/Users/dsznw/OneDrive/Desktop/131ProjectCSVs/images/rlcsimage.jpg){width="1000"} This data set consists of every game played from the Rocket League Championship Series (RLCS) 2023 Spring Major. While Regional tournaments are played among regions (North America, Europe, South America, etc.), Majors are played by all regions. I wanted to choose an all-region tournament otherwise many of the teams would have a similar play style.
+
+I decided to use RLCS games instead of random games for a few reasons. because it ensures that every player is trying their hardest to win. This will take out the variability of goal differential being due to a lack of effort and/or incentive. Since this is a professional tournament which teams had to qualify for, it takes out a lot of the skill disparity between teams. Also, I chose all professional teams because if a player is significantly better than the rest of the lobby, they will naturally play faster due to being more comfortable with their car control. So what will likely happen is that statistically they will perform the best and be faster than the rest of the lobby.
+
+But, the higher speed would be from a skill gap, not a play style choice. I want to make sure that I am testing the effectiveness of play styles, not just who is better.
+
+# Loading the Data
+
+First and foremost we need to load in our packages and data set.
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(ggplot2)
+library(ISLR)
+library(ISLR2)
+library(parsnip)
+library(recipes)
+library(magrittr)
+library(yardstick)
+library(discrim)
+library(poissonreg)
+library(corrr)
+library(corrplot)
+library(klaR)
+library(readxl)
+library(glmnet)
+library(modeldata)
+library(ggthemes)
+library(janitor)
+library(naniar)
+library(xgboost)
+library(ranger)
+library(vip)
+tidymodels_prefer()
+```
+
+Next I load in my data set, set my seed so my models can be reproduced, and print out a few rows of the data to show what it looks like.
+
+```{r}
+# Reading in the full data set of the 2023 RLCS Spring Major
+match_data <- read_excel('ProjectData.xlsx')
+set.seed(325)
+
+# Changing the categorical variables to vectors
+match_data$color <- as.factor(match_data$color)
+match_data$team <- as.factor(match_data$team)
+
+# Previewing the first few rows of the data
+head(match_data)
+```
+
+The data all comes from [ballchasing.com](https://ballchasing.com/group/major-0kgyzibf8b) specifically from the RLCS Referee account. I downloaded each individual game and put all the separate csv files into one big Excel spreadsheet.
+
+Before we mess with the data, lets check if there is any missing data that needs to be addressed.
+
+```{r}
+vis_miss(match_data)
+```
+
+Luckily, there is no data missing so we can proceed without any issues.
+
+# Exploratory Data Analysis
+
+Here I am going to create some visuals to get a better idea of the data and find some potential trends.
+
+## Goal Differential
+
+Lets take a look at what goal differentials are most common!
+
+```{r}
+ggplot(match_data, aes(x=goal_diff)) +
+  geom_histogram(binwidth = 1, fill = "red") +
+  labs(title = 'Distribution of Goal Differential', x = 'Goal Differential', y = 'Count')
+```
+
+The distribution is perfectly split in half because in every game the teams will have the negative of their opponents goal differential. There are no counts of 0 goal differential because games will continue to go on until there is a winner and loser.
+
+## High Speeds and Time Spent On Offense
+
+Before we dive deeper into what effects goal differential, I want to see what teams performed to best. This way we can see if there are any trends that directly correlate to a higher goal differential.
+
+```{r message=FALSE, warning=FALSE}
+ggplot(match_data, aes(x = reorder(team,goal_diff), y = goal_diff), fill = team) +
+  geom_bar(stat='summary', fill = "blue") +
+  theme(axis.text.x = element_text(size = 8, angle = 90)) +
+  labs(title = 'Mean Goal Differential', x='Team', y='Goal Differential')
+```
+
+From this chart Elevate was the clear worst team and Vitality was the clear best. This makes sense since Elevate placed in the bottom 4 teams and Vitality won the entire event. Now lets see if there any trend between being in supersonic speed, the fastest speed in the game, and goal differential. I also am going to check if there is a relationship between being in the offensive third of the field and goal differential. These graphs will be ordered by mean goal differential to see if the better teams have significant differences than the worst teams.
+
+```{r message=FALSE, warning=FALSE}
+# Bar chart for supersonic speed
+ggplot(match_data, aes(x = reorder(team,goal_diff), y = perc_super), fill = team) +
+  geom_bar(stat='summary', fill = 'purple') +
+  theme(axis.text.x = element_text(size = 8, angle = 90)) +
+  labs(title = 'Mean Percentage in Supersonic Speed', x='Team', y='Percentage in Supersonic Speed') +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+# Bar chart for percentage in offensive third
+ggplot(match_data, aes(x = reorder(team,goal_diff), y = perc_off_third), fill = team) +
+  geom_bar(stat='summary', fill = 'green') +
+  theme(axis.text.x = element_text(size = 8, angle = 90)) +
+  labs(title = 'Mean Percentage in Offensive Third', x='Team', y='Percent in Offensive Third') +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+```
+
+The first chart does not show any significant trends throughout the teams. The top two teams in goal differential do seem to be in supersonic speed more than most of the teams but other than the it seems fairly random. Furia is an interesting team because their supersonic speed percentage is much higher than the other teams also with a negative mean goal differential. Furia is known for playing risky, fast, and high flying who had success in prior tournaments but put up a poor performance in this major.
+
+The second chart shows some what of a positive relationship between being on the offensive third of the field and goal differential. The bottom four teams are clearly in the offensive third of the field less than the rest of the teams but other than that it seems fairly random.
+
+In both graphs, there is no significant relationship that results in a higher goal differential. The better teams tend to drive a little faster and spend a little more time on the offensive third of the field but this is likely due to simply having more skill. Players with more skill will be more comfortable playing at a faster pace and will naturally also be on offense more often.
+
+## Covering Ground and Scoring Goals
+
+The ideology of playing faster is that teams will score more goals but also concede more often since playing fast can lead to over committing and having a weak defense. So, I want to see if this is actually true. The following chart will order the teams from least to most distance traveled per minute. Notice that this order is different than the goal differential order. Some teams moved a substantial amount while some teams stayed in the same general area.
+
+```{r message=FALSE, warning=FALSE}
+ggplot(match_data, aes(x = reorder(team,dist_per_min), y = dist_per_min), fill = team) +
+  geom_bar(stat='summary', fill = 'blue') +
+  labs(title = 'Mean Distance Per Minute', x = 'Team', y = 'Distance per Min') +
+  theme(axis.text.x = element_text(size = 8, angle = 90))
+```
+
+So is the belief true? Well according to these two bar charts about goals scored and goals conceded, that doesn't seem to be the case. There is no consistent or significant trend that shows a correlation between distance traveled per minute and goals scored and conceded.
+
+```{r message=FALSE, warning=FALSE}
+ggplot(match_data, aes(x = reorder(team,dist_per_min), y = goals), fill = team) +
+  geom_bar(stat='summary', fill = 'green4') +
+  labs(title = 'Mean Goals Scored by Distance Per Minute', x = 'Distance per Minute', y = 'Goals Scored') +
+  theme(axis.text.x = element_text(size = 8, angle = 90))
+
+ggplot(match_data, aes(x = reorder(team,dist_per_min), y = goals_concede), fill = team) +
+  geom_bar(stat='summary', fill = 'red4') +
+  labs(title = 'Mean Goals Conceded by Distance Per Minute', x = 'Distance per Minute', y = 'Goals Conceded') +
+  theme(axis.text.x = element_text(size = 8, angle = 90))
+```
+
+## Relationships with Positioning
+
+One interesting relationship is the slight positive relationship between being on the offensive third and being in supersonic speed. This shows that the play style of playing fast does involve being on offense more often. But, that does not directly lead to scoring more goals. Even though there is a positive relationship between supersonic speed and the offensive third, there is no correlation between being in the offensive third and scoring goals. The next two charts include data points where one data point is one game played by a team. Thus every observation in the data set is represented on these graphs.
+
+```{r}
+ggplot(match_data, aes(x=perc_super, y=perc_off_third, color=team)) +
+  geom_point() +
+  geom_abline() +
+  labs(title = '% in Supersonic Speed vs % on Offensive Third', x = '% in Supersonic Speed', y = '% on Offensive Third') +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1))
+
+ggplot(match_data, aes(x=perc_off_third, y=goals, color=team)) +
+  geom_point() +
+  labs(title = '% in Offensive Third vs Goals Scored', x = '% in Offensive Third', y = 'Goals Scored') +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1))
+```
+
+Next we will look at the opposite and see if being in the defensive third of the field is related to playing slower. Similarly to the graph above, there is a slight positive relationship between being in the defensive third of the field and being in slow speed. This is likely because a defensive play style tends to be more reactive which will involve more time waiting for the opponent to make a move. Once again, there is no relationship at all between being in the defensive third and conceding goals.
+
+```{r}
+ggplot(match_data, aes(x=perc_slow, y=perc_def_third, color=team)) +
+  geom_point() +
+  geom_abline() +
+  labs(title = '% in Slow Speed vs % on Defensive Third', x = '% in Slow Speed', y = '% on Defensive Third') +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1))
+
+ggplot(match_data, aes(x=perc_def_third, y=goals_concede, color=team)) +
+  geom_point() +
+  labs(title = '% in Defensive Third vs Goals Conceded', x = '% in Defensive Third', y = 'Goals Conceded') +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1))
+```
+
+So far, it does not seem like either speed or positioning are going to be strong predictors of goal differential. But, the data does show evidence that different play styles exist. Playing faster tends to spending more time on offense while playing slower tends to spend more time on defense. Now we will find out if speed or positioning
+
+# Setting up the Models
+
+Before we can start our models, I need to split the data into a training and testing set. The training set will be used to train and tune the models. The testing set won't be used until we find our best models based on the root mean squared error(RMSE), where I will then test the accuracy of the model on the testing data set. The point of saving a portion of the data set for testing purposes is to avoid over-fitting. Saving the testing set allows us to simulate how the model would perform on a new set of data. 
+
+## Splitting and Folding the Data
+
+For this data set I made the training set 75% of the data and the testing set the remaining 25%. Also, the split is stratified on the variable goal_diff so that the training and testing data have an equal distribution of goal_diff. This is important because goal_diff is the outcome variable.
+
+### Stratified Sampling
+
+```{r}
+data_split <- initial_split(match_data, strat = 'goal_diff', prop = 0.75)
+
+data_train <- training(data_split)
+data_test <- testing(data_split)
+
+data_split
+```
+
+Based on the proportions that I chose the training set has 210 observations and the testing set has 72 observations.
+
+### K-fold Cross Validation
+
+To break down the data set even further, we will use k-fold cross validation. This is a resampling method that splits the training data into k different data sets called folds. Each fold is split into a training and testing set for the model to train and test on. This gives models the ability to train and test their accuracy multiple times. Afterwards we can take the mean RMSE from the k number of models which gives a better estimate of a model's performance. In this case, we will split the data into 5 different folds and will again stratify the split on goal_diff.
+
+```{r}
+data_fold <- vfold_cv(data_train, strata='goal_diff',v=5)
+```
+
+# Building the Models
+
+## The Recipes
+
+It is time to make the two recipes that we will compare. The first recipe will include predictors that are seen as important in a fast paced play style. I chose 5 predictors: `dist_per_min`(distance traveled per minute), `coll_per_min`(boost collected per minute), `bpm`(boost used per minute), `perc_boost`(percent of time in boost speed), and `perc_super`(percent of time in supersonic speed). The fast, aggressive play style consists of relentless pressure from playing at high speeds, stealing boost, and continuously moving. These 5 predictors embody what the play style is all about.
+
+The second recipe is about positioning. This consists of predictors that highlight where players will be on the field and whether or not a team likes to play on the ground or air. The 5 predictors I chose are `perc_ground`(percent of time on the ground), `perc_infront`(percent of the time in front of the ball), `perc_off_half`(percent in the offensive half), `perc_def_third`(percent in the defensive third), and `perc_neut_third`(percent in the neutral third). All predictors are numerical so we don't need any dummy variables and do not need to do any imputations. 
+
+```{r}
+speed_recipe <- recipe(goal_diff ~ dist_per_min + coll_per_min + bpm + perc_boost + perc_super, data = data_train) %>%
+  step_center(all_predictors()) %>% 
+  step_scale(all_predictors())
+
+position_recipe <- recipe(goal_diff ~ perc_ground + perc_infront + perc_off_half + perc_def_third + perc_neut_third, data = data_train) %>%
+  step_center(all_predictors()) %>% 
+  step_scale(all_predictors())
+```
+
+## The Models
+
+Finally it is time to set up our 4 models: linear regression, k-nearest neighbors, random forest, and gradient boosted trees. For the parameters of k-nearest neighbors, random forest, and gradient boosted trees we will tune them in order to find the best version of each model. We can use these models for both the speed and positioning recipes. 
+
+```{r}
+linear_mod <- linear_reg() %>%
+  set_engine("lm")
+
+knn_mod <- nearest_neighbor(neighbors = tune()) %>%
+  set_mode("regression") %>%
+  set_engine("kknn")
+
+forest_mod <- rand_forest(mtry = tune(),
+                          trees = tune(),
+                          min_n = tune()) %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("regression")
+
+xgboost_mod <- boost_tree(mtry = tune(),
+                          trees = tune(),
+                          learn_rate = tune()) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+```
+
+## Setting Up The Workflows
+
+Even though we only need one of each model, we will have to set up separate workflows for the speed and positioning recipes. This is because a workflow needs a recipe so we will set up 8 total workflows. For each workflow we will add the model and recipe.
+
+```{r}
+speed_linear_wf <- workflow() %>%
+  add_model(linear_mod) %>%
+  add_recipe(speed_recipe)
+
+speed_knn_wf <- workflow() %>%
+  add_model(knn_mod) %>%
+  add_recipe(speed_recipe)
+
+speed_forest_wf <- workflow() %>%
+  add_model(forest_mod) %>%
+  add_recipe(speed_recipe)
+
+speed_xgboost_wf <- workflow() %>%
+  add_model(xgboost_mod) %>%
+  add_recipe(speed_recipe)
+```
+
+```{r}
+pos_linear_wf <- workflow() %>%
+  add_model(linear_mod) %>%
+  add_recipe(position_recipe)
+
+pos_knn_wf <- workflow() %>%
+  add_model(knn_mod) %>%
+  add_recipe(position_recipe)
+
+pos_forest_wf <- workflow() %>%
+  add_model(forest_mod) %>%
+  add_recipe(position_recipe)
+
+pos_xgboost_wf <- workflow() %>%
+  add_model(xgboost_mod) %>%
+  add_recipe(position_recipe)
+```
+
+# Tune the Models
+
+## Making the Tuning Grids
+
+In order to tune the models, we need to specify the range of values we want to test for each parameter. That is what the tuning grids do. Inside each tuning grid we specify the range of values that should be tested for each parameter and specify the number of levels that should be tested. 
+
+After trying many different combinations of values I decided to make different grids for the different recipes. For example, the k-nearest neighbors tuning grid for the speed recipe is different than the k-nearest neighbors tuning grid for the positioning recipe. The same goes for the random forest and gradient-boosted tree models.
+
+For k-nearest neighbors the values for `neighbors` needs to be tuned.
+
+For the random forest model, the parameters we are tuning are `mtry`, `trees`, and `min_n`. `mtry` is the number of predictors that will be selected at each split when a tree is created. `trees` is the number of trees that the model will split up into. `min_n` is the minimum number of data points a single node needs in order to split again.
+
+The for gradient boosted tree model, we are tuning `mtry`, `trees`, and `learn_rate`. `mtry` and `trees` have the same definition as the random forest. The `learn_rate` is the rate at which the boosting algorithm adapts from one iteration to the next.
+
+```{r}
+speed_knn_grid <- grid_regular(neighbors(range = c(10,30)), levels = 10)
+
+speed_forest_grid <- grid_regular(mtry(range = c(1,5)),
+                            trees(range = c(100,500)),
+                            min_n(range = c(10,20)), levels = 7)
+
+speed_xgboost_grid <- grid_regular(mtry(range = c(1,5)),
+                             trees(range = c(100,500)),
+                             learn_rate(range = c(-7,-1)), levels = 5)
+
+
+pos_knn_grid <- grid_regular(neighbors(range = c(10,20)), levels = 10)
+
+pos_forest_grid <- grid_regular(mtry(range = c(1,5)),
+                            trees(range = c(100,500)),
+                            min_n(range = c(5,15)), levels = 7)
+
+pos_xgboost_grid <- grid_regular(mtry(range = c(1,5)),
+                             trees(range = c(100,500)),
+                             learn_rate(range = c(-5,-1)), levels = 5)
+```
+## Fit The Tuned Models
+
+Now that all the workflows and tuning grids are setup we need to fit the models. Here I use the folded data set and tuning grids when applicable to fit my tuned models. The code to create the tuned models so I have previously created the tuned models, saved them, and now will load them in so they can be used. Now it is time to evaluate all of our models. 
+
+```{r, eval=FALSE}
+speed_linear_fit <- speed_linear_wf %>%
+  fit_resamples(resamples = data_fold)
+
+speed_knn_fit <- tune_grid(
+  object = speed_knn_wf,
+  resamples = data_fold,
+  grid = speed_knn_grid
+)
+
+speed_forest_fit <- tune_grid(
+  object = speed_forest_wf,
+  resamples = data_fold,
+  grid = speed_forest_grid
+)
+
+speed_xgboost_fit <- tune_grid(
+  object = speed_xgboost_wf,
+  resamples = data_fold,
+  grid = speed_xgboost_grid
+)
+```
+
+```{r, eval=FALSE}
+save(speed_linear_fit, file = "speed_linear_fit.rda")
+save(speed_knn_fit, file = "speed_knn_fit.rda")
+save(speed_forest_fit, file = "speed_forest_fit.rda")
+save(speed_xgboost_fit, file = "speed_xgboost_fit.rda")
+```
+
+```{r, eval=FALSE}
+pos_linear_fit <- pos_linear_wf %>%
+  fit_resamples(resamples = data_fold)
+
+pos_knn_fit <- tune_grid(
+  object = pos_knn_wf,
+  resamples = data_fold,
+  grid = pos_knn_grid
+)
+
+pos_forest_fit <- tune_grid(
+  object = pos_forest_wf,
+  resamples = data_fold,
+  grid = pos_forest_grid
+)
+
+pos_xgboost_fit <- tune_grid(
+  object = pos_xgboost_wf,
+  resamples = data_fold,
+  grid = pos_xgboost_grid
+)
+```
+
+```{r, eval=FALSE}
+save(pos_linear_fit, file = "pos_linear_fit.rda")
+save(pos_knn_fit, file = "pos_knn_fit.rda")
+save(pos_forest_fit, file = "pos_forest_fit.rda")
+save(pos_xgboost_fit, file = "pos_xgboost_fit.rda")
+```
+
+```{r}
+load("speed_linear_fit.rda")
+load("speed_knn_fit.rda")
+load("speed_forest_fit.rda")
+load("speed_xgboost_fit.rda")
+
+load("pos_linear_fit.rda")
+load("pos_knn_fit.rda")
+load("pos_forest_fit.rda")
+load("pos_xgboost_fit.rda")
+```
+
+## Visuals of tuning models
+### Speed Recipe
+These are the tuning results for the speed recipe. 
+
+```{r}
+speed_knn_fit %>%
+  autoplot()
+speed_forest_fit %>%
+  autoplot()
+speed_xgboost_fit %>%
+  autoplot()
+```
+
+For the k-nearest neighbors model, the RMSE continues to go down as the neighbors increase. But, if we use too many neighbors then the model will under-fit the data which is also a problem. As a result, I decided to make the cutoff at 30 neighbors where I felt that the RMSE was starting to decrease at a slower rate. 
+
+In the random forest model, the most consistent trend is in the parameter `mtry`. There shows a clear positive relationship between the parameter `mtry` and the RMSE. Aside from that, there does not seem to be any significant trends in the parameters `trees` and `min_n`. In some cases more `trees` are better and in some cases its the opposite. This is the same for `min_n`.
+
+Lastly in the gradient boosted tree model, it seems like the lower the `trees` the better. From my range of parameter values the best RMSE comes from when the `trees` are a smaller value and when the `learn_rate` is closer to 0.1 than to 0.
+
+```{r}
+show_best(speed_linear_fit, metric = "rmse")
+show_best(speed_knn_fit, metric = "rmse", n=1)
+show_best(speed_forest_fit, metric = "rmse",n=1)
+show_best(speed_xgboost_fit, metric = "rmse",n=1)
+
+final_speed_mod <- select_best(speed_knn_fit, metric = "rmse", neighbors)
+```
+
+Out of the 4 models the k-nearest neighbors model with 30 `neighbors` achieved the lowest mean RMSE so that will be the model to save and move forward with. The final model for the speed recipe is now set. Now we need to finalize the model for the positioning 
+
+### Positioning Recipe
+
+Now lets tune the positioning models. Contrast from the speed model, the k-nearest neighbors model does not continue to improve as the `neighbors` increase. The graph of RMSE bottoms out around 15 `neighbors` which shows that it is the optimal number for `neighbors`. 
+
+In the random forest model, there is a huge drop in RMSE as `mtry` goes from 1 to 2 but then RMSE slowly starts to increase as `mtry` further increases. Other than that, there does not seem to be any consistent trend regarding `trees` and `min_n`.
+
+In the gradient boosted tree model, RMSE starts to vary among different values of `trees` as `learn_rate` increases until it reaches 0.1. This is good because then we have established a good lower and upper bound of values to tune with. For `mtry` and `trees` the trends for these parameters are different depending on the value of `learn_rate`. There are both positive and negative relationships represented between both `mtry` and `trees` with RMSE. 
+
+```{r}
+pos_knn_fit %>%
+  autoplot()
+pos_forest_fit %>%
+  autoplot()
+pos_xgboost_fit %>%
+  autoplot()
+```
+
+```{r}
+show_best(pos_linear_fit, metric = "rmse")
+show_best(pos_knn_fit, metric = "rmse", n=1)
+show_best(pos_forest_fit, metric = "rmse", n=1)
+show_best(pos_xgboost_fit, metric = "rmse", n=1)
+```
+
+Despite all of the tuning, the linear regression model ended up with the lowest mean RMSE across the 5 folds. It performed considerably better than the rest of the models so we will move forward with the linear regression model. 
+
+## Save the best model and finalize workflow with the best for each
+
+Since we found the best model for each recipe, it is time to finalize the workflows for both the speed and positioning recipes. After we finalize the workflows we fit the models to the full training set and save the models.
+
+```{r, eval=FALSE}
+final_speed_wf <- finalize_workflow(speed_linear_wf, final_speed_mod)
+final_speed_fit <- fit(final_speed_wf, data = data_train)
+
+final_pos_fit <- fit(pos_linear_wf, data = data_train)
+```
+
+```{r, eval=FALSE}
+save(final_speed_fit, file = "final_speed_fit.rda")
+save(final_pos_fit, file = "final_pos_fit.rda")
+```
+
+# Model Testing Results
+
+Lets load in our finalized models and fit them to the testing data set. What we want to do now is compare the RMSE of the different recipes. The model with the lower RMSE means that the predictor variables in the associated recipe were more meaningful in telling what the difference in score would be at the end of a game. So in short, the recipe that results in a lower RMSE have variables that play a more significant role in telling who will win or lose a game. 
+
+```{r}
+load("final_speed_fit.rda")
+load("final_pos_fit.rda")
+```
+
+```{r message=FALSE, warning=FALSE}
+final_speed_test <- augment(final_speed_fit, data_test)
+final_pos_test <- augment(final_pos_fit, data_test)
+
+rmse(final_speed_test, truth = goal_diff, estimate = .pred)
+rmse(final_pos_test, truth = goal_diff, estimate = .pred)
+```
+
+The linear regression model for the position recipe performed much better than the k-nearest neighbors model for the speed recipe. These are both low RMSE scores but that could be due to the fact that goal differential in games does not very by that much. This is natural in professional games since the players competing are the best in the world and the skill gap between them is minimal. It might be better to see a visual of how well the models predicted goal differential. 
+
+## Predicted vs Actual Values
+
+```{r message=FALSE, warning=FALSE}
+ggplot(final_speed_test, aes(x = .pred, y = goal_diff)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method='lm', se = FALSE) +
+  scale_x_continuous(limits=c(-4,4), breaks=seq(-4,4,1)) + 
+  scale_y_continuous(limits=c(-4,4), breaks=seq(-4,4,1)) +
+  coord_fixed(ratio = 1) +
+  labs(title = "Speed Recipe: Predicted vs Actual Goal Differential", x = 'Predicted', y = 'Actual')
+
+ggplot(final_pos_test, aes(x = .pred, y = goal_diff)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method='lm', se = FALSE) +
+  scale_x_continuous(limits=c(-4,4), breaks=seq(-4,4,1)) + 
+  scale_y_continuous(limits=c(-4,4), breaks=seq(-4,4,1)) +
+  coord_fixed(ratio = 1) +
+  labs(title = "Positioning Recipe: Predicted vs Acual Goal Differential", x = 'Predicted', y = 'Actual')
+```
+
+For the speed model, the predictions are all between -1 and 1 and in general does not show great predicting power as seen by the regression line. On the other hand, the positioning model predicts a much wider range of values and there is a clear positive relationship between the predicted values and actual values. Now we can clearly see that the positioning model performed much better than the speed model.
+
+## Variable Importance
+
+What made the positioning model so much more effective than the speed model? We need to analyze what variables had the most predicting power amongst the recipes.
+
+```{r}
+final_speed_fit %>% extract_fit_parsnip() %>%
+  vip(aesthetics = list(fill = "blue", color = "black"))
+
+final_pos_fit %>% extract_fit_parsnip() %>%
+  vip(aesthetics = list(fill = "orange", color = "black"))
+```
+
+For the speed model, `coll_per_min` and `bpm`, which are both related to boost, had the highest importance. But, if you notice the x-axis the importance of all the variables are very low. Thus none of the speed variables were very important in predicting goal differential. To my surprise `dist_per_min` had the lowest importance. Many players try to constantly move in their gameplay so I thought that the distance traveled in a game would generally be very important in winning or losing a game.
+
+On the other hand, the positioning model had one specific variable that had a significantly higher importance variable. `perc_infront` showed an incredibly high importance level which is what made the model so much better. The rest of the variables had similar importance level to the variables of the speed model. 
+
+# Conclusion
+
+After tuning models for both the speed and positioning recipes, the positioning model showed to be much more accurate in predicting a teams goal differential. This means that how players are positioned on the field influence the score of a game more than how fast players are moving around the field. 
+
+I was surprised that the k-nearest neighbors model performed the best for the speed recipe. But, all the models performed very similarly and had a RMSE within 0.01 of each other. This makes me believe that the predictor variables lacked predicting power so the type of model really would not make much of a difference. Since the most important variables were about boost usage and boost collection, perhaps I should have chosen variables that involved boost collection as that is also a factor of playing with the speed play style. Stealing the opponents boost is one way to out pace the opponent so if I were to do try this project again, I might want to account for boost stealing. Boost is an integral part of success in Rocket League since it propels you into speeds you could not reach otherwise. It also allows you to reach balls high up in the air.
+
+On the other hand, there was a clear winner for the positioning recipe when calculating RMSE. The linear model was the only model with a mean RMSE under 1.7. But, the rest of the models were still less than any of the models for the speed recipe which already told me that the positioning model was going to outperform the speed model. I was genuinely surprised that the variable `perc_infront` had such high importance. It truly is what gave the model any type of success. The more I think about it the more it makes sense. One's position in relation to the ball, teammates, and opponents is what is truly important. This means that the the positioning around the field without any context of the ball or other plays does not mean that much. Obviously you don't want to reach extremes such as being in the defensive third of the field for 90% of the game but aside from extreme scenarios, relative positioning is much more important. That is why the players positioning relative to the ball position was such a strong predictor variable. 
+
+Even if I had chosen better predictor variables for each model, I still believe that the positioning recipe would come out on top. Most players have a misconception on what it means to out pace your opponent. Getting to balls faster than your opponent often relies on being closer to the ball. Thus, what makes players 'fast' in Rocket League is having an efficient path to the ball and one's positioning to be in a good position to make a play on the ball. With this project I wanted to show that actual car speed does not necessarily make a player faster.
+
+**Just to clarify, this does not necessarily mean that better positioning wins more games than out pacing your opponent. Since I am only predicting goal differential, this project shows that a teams positioning on the field has more influence on the outcome of a game than a teams speed throughout the game.**
+
+If I had more time and computing power for this project, I would first use individual player data from every game since there would be more relative positioning data such as average distance in between teammates. I would also like to predict goals scored and goals conceded instead of just goal differential to analyze risky and conservative play styles. But, I am still very happy with how my project turned out. I hope this project was not only interesting, but informative. And hopefully this will helpout at least one Rocket League player, because I can guarantee this will help my own game play. 
